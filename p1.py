@@ -58,8 +58,6 @@ Only one valid answer exists.
 
 """
 
-
-
 class Solution:
     def main(self,nums,target):
         result = []
@@ -68,7 +66,8 @@ class Solution:
                 if target==ele+ele1:
                     result.extend([i,i+j+1])
         return result
-
+    # TC O(N2)
+    # SC O(1)
     def second(self,nums,target):
         result = []
         for i,ele in enumerate(nums):
@@ -77,5 +76,6 @@ class Solution:
                     result.extend([i,i+j+1])
         return result
 
-print(Solution().main([-6, 7, 1, -7, 6, 2],3))
-print(Solution().main([-6, 7, 1, -7, 6, 2],3))
+print(Solution().main([-6, 7, 1, -7, 6, 2],3)) #[2, 5]
+print(Solution().main([1, 6, 2, 10, 3], 7)) #[0, 1]
+print(Solution().main([1, 3, 5, -7, 6, -3],0)) #[1, 5]
