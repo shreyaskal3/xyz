@@ -34,9 +34,15 @@ Constraints
 """
 import random
 import time
+import multiprocessing as mp
+import tracemalloc
 
 
-height = [1,8,6,2,5,4,8,3,7 ] 
+TIME_LIMIT_S = 0.10
+SPACE_LIMIT_MB = 32.0
+PROCESS_STARTUP_GRACE_S = 2
+
+
 def container(height):
     area = 0
     n = len(height)
@@ -59,6 +65,46 @@ def container(height):
         
     return (best_right-best_left) * min(height[best_left],height[best_right])
 
+
+def _limit_worker(arr, q):
+    try:
+        tracemalloc.start()
+        start = time.perf_counter()
+        ans = container(arr)
+        elapsed = time.perf_counter() - start
+        _, peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        q.put(("OK", ans, elapsed, peak_bytes / (1024 * 1024)))
+    except Exception as exc:
+        q.put(("RTE", str(exc), None, None))
+
+
+def run_with_limits(arr, time_limit_s=TIME_LIMIT_S, space_limit_mb=SPACE_LIMIT_MB):
+    q = mp.Queue()
+    process = mp.Process(target=_limit_worker, args=(arr, q))
+    process.start()
+    process.join(time_limit_s + PROCESS_STARTUP_GRACE_S)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        return "TLE", None, None, None
+
+    if q.empty():
+        return "RTE", None, None, None
+
+    status, payload, elapsed, peak_mb = q.get()
+    if status != "OK":
+        return status, payload, elapsed, peak_mb
+
+    if elapsed is not None and elapsed > time_limit_s:
+        return "TLE", payload, elapsed, peak_mb
+
+    if peak_mb is not None and peak_mb > space_limit_mb:
+        return "MLE", payload, elapsed, peak_mb
+
+    return "OK", payload, elapsed, peak_mb
+
 tests = [
     # ([1, 1], 1),
     # ([1, 2, 1], 2),
@@ -77,33 +123,45 @@ tests = [
 ]
 
 
-for i,j in tests:
-    print(i,j)
-    start = time.perf_counter()
-    ans = container(i)
-    end = time.perf_counter()
-
-    print(f"time={(end-start):.6f}s")
-    print(True if j==ans else ans)
-
-
-print("\nBenchmark for growth")
-previous_time = None
-for n in [10**3, 10**4, 10**5]:
-    total_time = 0
-    for _ in range(5):
-        sample = [random.randint(0, 10**4) for _ in range(n)]
-        start = time.perf_counter()
-        container(sample)
-        end = time.perf_counter()
-        total_time += end - start
-
-    avg_time = total_time / 5
-    if previous_time is None:
-        print(f"n={n}, avg_time={avg_time:.6f}s")
-    else:
+def run_basic_tests():
+    print(
+        f"Judge limits: time={TIME_LIMIT_S:.3f}s, "
+        f"space={SPACE_LIMIT_MB:.1f}MB\n"
+    )
+    for arr, expected in tests:
+        print(arr, expected)
+        status, ans, elapsed, peak_mb = run_with_limits(arr)
         print(
-            f"n={n}, avg_time={avg_time:.6f}s, "
-            f"growth_vs_prev={avg_time / previous_time:.2f}x"
+            f"status={status}, time={elapsed:.6f}s, peak_mem={peak_mb:.4f}MB"
+            if elapsed is not None and peak_mb is not None
+            else f"status={status}"
         )
-    previous_time = avg_time
+        print(True if status == "OK" and ans == expected else ans)
+
+
+def benchmark_growth():
+    print("\nBenchmark for growth")
+    previous_time = None
+    for n in [10**3, 10**4, 10**5]:
+        total_time = 0
+        for _ in range(5):
+            sample = [random.randint(0, 10**4) for _ in range(n)]
+            start = time.perf_counter()
+            container(sample)
+            end = time.perf_counter()
+            total_time += end - start
+
+        avg_time = total_time / 5
+        if previous_time is None:
+            print(f"n={n}, avg_time={avg_time:.6f}s")
+        else:
+            print(
+                f"n={n}, avg_time={avg_time:.6f}s, "
+                f"growth_vs_prev={avg_time / previous_time:.2f}x"
+            )
+        previous_time = avg_time
+
+
+if __name__ == "__main__":
+    run_basic_tests()
+    benchmark_growth()
